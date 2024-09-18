@@ -1,0 +1,64 @@
+on:
+  push:
+    branches:
+      - 'main'
+    tags:
+      - 'v*'
+
+env:
+  SDK_VERSION: 0.11.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        id: setup_buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata from Git refs and GitHub events
+        id: extract_metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/test-image
+            ghcr.io/${{ github.repository_owner }}/test-image
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build machine image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: SDK_VERSION=${{ env.SDK_VERSION }}
+          platforms: linux/amd64,linux/arm64
+          builder: ${{ steps.setup_buildx.outputs.name }}
+          tags: ${{ steps.extract_metadata.outputs.tags }}
+          labels: ${{ steps.extract_metadata.outputs.labels }}
+          annotations: ${{ steps.extract_metadata.outputs.annotations }}
+          cache-from: type=gha,scope=ubuntu
+          cache-to: type=gha,mode=max,scope=ubuntu
